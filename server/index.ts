@@ -1,5 +1,5 @@
 import { serve } from '@hono/node-server';
-import { and, asc, desc, eq, like, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { openDb } from './db/client.js';
@@ -99,10 +99,35 @@ app.get('/api/items', (c) => {
   return c.json({ items: rows, total: totalRow?.n ?? 0 });
 });
 
+// Default "primary price" series for the chart: median buyout is the most stable
+// market signal. Listing bots regularly drag `nerfed:buyout_min` to vendor price, so
+// using min as the default makes cheap consumables look like they're selling for ~0.
+// Other nerfed series are surfaced via ?sources=...
+const PRIMARY_PRICE_SOURCES = ['db', 'history', 'nerfed:buyout_median'] as const;
+const ALL_KNOWN_SOURCES = [
+  'db',
+  'history',
+  'nerfed:buyout_min',
+  'nerfed:buyout_median',
+  'nerfed:bid_mean',
+  'nerfed:bid_median',
+  'nerfed:quantity',
+];
+
+function parseSourcesParam(raw: string | undefined): string[] {
+  if (!raw) return [...PRIMARY_PRICE_SOURCES];
+  if (raw === 'all') return ALL_KNOWN_SOURCES;
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => ALL_KNOWN_SOURCES.includes(s));
+}
+
 app.get('/api/items/:id/scans', (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isFinite(id)) return c.json({ error: 'bad id' }, 400);
   const limit = Math.min(Number(c.req.query('limit') ?? 5000), 50000);
+  const sources = parseSourcesParam(c.req.query('sources'));
 
   const item = db
     .select({
@@ -130,19 +155,27 @@ app.get('/api/items/:id/scans', (c) => {
       source: scans.source,
     })
     .from(scans)
-    .where(eq(scans.itemId, id))
+    .where(and(eq(scans.itemId, id), inArray(scans.source, sources)))
     .orderBy(asc(scans.observedAt))
     .limit(limit)
     .all();
 
-  return c.json({ item, scans: rows });
+  return c.json({ item, scans: rows, sources });
 });
+
+const BUCKET_SECONDS: Record<string, number> = {
+  hour: 3_600,
+  day: 86_400,
+  week: 604_800,
+  month: 2_592_000, // 30-day chunks (not calendar months — consistent width matters more)
+};
 
 app.get('/api/items/:id/candles', (c) => {
   const id = Number(c.req.param('id'));
   if (!Number.isFinite(id)) return c.json({ error: 'bad id' }, 400);
   const bucket = c.req.query('bucket') ?? 'day';
-  const seconds = bucket === 'hour' ? 3600 : 86400;
+  const seconds = BUCKET_SECONDS[bucket] ?? BUCKET_SECONDS.day;
+  const sources = parseSourcesParam(c.req.query('sources'));
 
   const rows = db.all<{
     bucket: number;
@@ -166,7 +199,7 @@ app.get('/api/items/:id/candles', (c) => {
           order by ${scans.observedAt} desc, ${scans.id} desc
         ) as rn_desc
       from ${scans}
-      where ${eq(scans.itemId, id)}
+      where ${and(eq(scans.itemId, id), inArray(scans.source, sources))}
     )
     select
       bucket,
@@ -180,7 +213,7 @@ app.get('/api/items/:id/candles', (c) => {
     order by bucket asc
   `);
 
-  return c.json({ candles: rows });
+  return c.json({ candles: rows, sources });
 });
 
 const port = Number(process.env.PORT ?? 3001);

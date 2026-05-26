@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   type CandlestickData,
   ColorType,
+  type HistogramData,
   type IChartApi,
   type ISeriesApi,
   type LineData,
@@ -11,11 +12,43 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Box, Button, Stack, Text } from '../../design-system/index.js';
 import { color } from '../../design-system/tokens.js';
-import { api } from '../../lib/api.js';
+import { api, type Bucket } from '../../lib/api.js';
 import { formatGoldShort } from '../../lib/currency.js';
 
-type Bucket = 'hour' | 'day';
 type Mode = 'candles' | 'line';
+
+const BUCKET_LABEL: Record<Bucket, string> = {
+  hour: '1H',
+  day: '1D',
+  week: '1W',
+  month: '1M',
+};
+
+const BUCKET_WORD: Record<Bucket, string> = {
+  hour: 'hourly',
+  day: 'daily',
+  week: 'weekly',
+  month: 'monthly',
+};
+
+function bucketLabel(b: Bucket) {
+  return BUCKET_WORD[b];
+}
+type Series = 'nerfed:buyout_median' | 'nerfed:buyout_min' | 'nerfed:bid_median' | 'nerfed:bid_mean';
+
+const SERIES_LABEL: Record<Series, string> = {
+  'nerfed:buyout_median': 'Median',
+  'nerfed:buyout_min': 'Min',
+  'nerfed:bid_median': 'Bid med',
+  'nerfed:bid_mean': 'Bid mean',
+};
+
+// Live (Auctionator) sources are always included; only the historical (nerfed) series
+// is swappable. Listing-bot floor prices push buyout_min near zero, so median is the
+// sensible default.
+function sourcesFor(series: Series): string {
+  return ['db', 'history', series].join(',');
+}
 
 type Props = {
   itemId: number;
@@ -25,17 +58,33 @@ type Props = {
 const copperToGold = (c: number) => c / 10000;
 
 export function PriceChart({ itemId, itemName }: Props) {
-  const [bucket, setBucket] = useState<Bucket>('day');
   const [mode, setMode] = useState<Mode>('line');
+  // OHLC needs multiple observations per bucket; nerfed is 1 sample/day, so default
+  // to a coarser bucket when in OHLC mode so candles actually have range.
+  const [bucket, setBucket] = useState<Bucket>('day');
+  const [series, setSeries] = useState<Series>('nerfed:buyout_median');
 
-  const { data: candleData, isLoading } = useQuery({
-    queryKey: ['candles', itemId, bucket],
-    queryFn: () => api.candles(itemId, bucket),
+  // When the user switches to OHLC, nudge bucket from 1D → 1W so candles look right.
+  useEffect(() => {
+    if (mode === 'candles' && (bucket === 'hour' || bucket === 'day')) setBucket('week');
+    if (mode === 'line' && bucket === 'month') setBucket('day');
+    // Only react to mode flips; user can still freely choose bucket after.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  const { data: candleData } = useQuery({
+    queryKey: ['candles', itemId, bucket, series],
+    queryFn: () => api.candles(itemId, bucket, sourcesFor(series)),
+  });
+
+  const { data: volumeData } = useQuery({
+    queryKey: ['candles', itemId, bucket, 'nerfed:quantity'],
+    queryFn: () => api.candles(itemId, bucket, 'nerfed:quantity'),
   });
 
   const { data: scanData } = useQuery({
-    queryKey: ['scans', itemId],
-    queryFn: () => api.scans(itemId),
+    queryKey: ['scans', itemId, series],
+    queryFn: () => api.scans(itemId, sourcesFor(series)),
     enabled: mode === 'line',
   });
 
@@ -47,11 +96,19 @@ export function PriceChart({ itemId, itemName }: Props) {
             {itemName}
           </Text>
           <Text size={2} muted>
-            {candleData?.candles.length ?? 0} {bucket === 'hour' ? 'hourly' : 'daily'} buckets ·
-            prices in gold
+            {candleData?.candles.length ?? 0} {bucketLabel(bucket)} buckets · showing{' '}
+            {SERIES_LABEL[series]} buyout · prices in gold
           </Text>
         </Stack>
         <Stack direction="row" gap={2}>
+          <ToggleGroup
+            value={series}
+            onChange={setSeries}
+            options={(Object.keys(SERIES_LABEL) as Series[]).map((s) => ({
+              v: s,
+              label: SERIES_LABEL[s],
+            }))}
+          />
           <ToggleGroup
             value={mode}
             onChange={setMode}
@@ -63,23 +120,19 @@ export function PriceChart({ itemId, itemName }: Props) {
           <ToggleGroup
             value={bucket}
             onChange={setBucket}
-            options={[
-              { v: 'hour', label: '1H' },
-              { v: 'day', label: '1D' },
-            ]}
+            options={(Object.keys(BUCKET_LABEL) as Bucket[]).map((b) => ({
+              v: b,
+              label: BUCKET_LABEL[b],
+            }))}
           />
         </Stack>
       </Stack>
       <Box flex={1} style={{ position: 'relative', minHeight: 0 }}>
-        {isLoading ? (
-          <Box style={{ padding: 'var(--space-4)' }}>
-            <Text muted>loading chart…</Text>
-          </Box>
-        ) : null}
         <ChartCanvas
           mode={mode}
           candles={candleData?.candles ?? []}
           scans={scanData?.scans ?? []}
+          volume={volumeData?.candles ?? []}
         />
       </Box>
     </Stack>
@@ -111,18 +164,24 @@ function ToggleGroup<T extends string>({
   );
 }
 
+type Candle = { bucket: number; open: number; high: number; low: number; close: number; volume: number };
+type Scan = { observedAt: number; pricePerUnit: number; stackSize: number };
+
 function ChartCanvas({
   mode,
   candles,
   scans,
+  volume,
 }: {
   mode: Mode;
-  candles: { bucket: number; open: number; high: number; low: number; close: number; volume: number }[];
-  scans: { observedAt: number; pricePerUnit: number; stackSize: number }[];
+  candles: Candle[];
+  scans: Scan[];
+  volume: Candle[]; // we reuse the candles endpoint for quantity; close = quantity for that day
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const priceSeriesRef = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Line'> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
 
   // Create chart once
   useEffect(() => {
@@ -137,7 +196,11 @@ function ChartCanvas({
         vertLines: { color: color.border },
         horzLines: { color: color.border },
       },
-      rightPriceScale: { borderColor: color.border },
+      rightPriceScale: {
+        borderColor: color.border,
+        autoScale: true,
+        scaleMargins: { top: 0.1, bottom: 0.25 },
+      },
       timeScale: { borderColor: color.border, timeVisible: true, secondsVisible: false },
       crosshair: { mode: 1 },
       autoSize: true,
@@ -150,14 +213,14 @@ function ChartCanvas({
       chart.remove();
       chartRef.current = null;
       priceSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
   }, []);
 
-  // Update price series when mode/data changes
+  // Price series — recreated whenever mode changes; data refreshed whenever data changes.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-
     if (priceSeriesRef.current) {
       chart.removeSeries(priceSeriesRef.current);
       priceSeriesRef.current = null;
@@ -183,24 +246,51 @@ function ChartCanvas({
       series.setData(data);
       priceSeriesRef.current = series;
     } else {
-      const series = chart.addLineSeries({
-        color: color.up,
-        lineWidth: 2,
-      });
+      const series = chart.addLineSeries({ color: color.up, lineWidth: 2 });
       const data: LineData[] = scans
-        .map((s) => ({
-          time: s.observedAt as Time,
-          value: copperToGold(s.pricePerUnit),
-        }))
+        .map((s) => ({ time: s.observedAt as Time, value: copperToGold(s.pricePerUnit) }))
         .sort((a, b) => (a.time as number) - (b.time as number));
       series.setData(data);
       priceSeriesRef.current = series;
     }
 
+    // Force the price axis to refit to the new data and snap the time axis to content.
+    priceSeriesRef.current
+      ?.priceScale()
+      .applyOptions({ autoScale: true, scaleMargins: { top: 0.1, bottom: 0.25 } });
     chart.timeScale().fitContent();
   }, [mode, candles, scans]);
 
-  // Custom legend hover
+  // Volume histogram — overlay on its own scale at the bottom 20% of the pane.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    if (volumeSeriesRef.current) {
+      chart.removeSeries(volumeSeriesRef.current);
+      volumeSeriesRef.current = null;
+    }
+
+    const points = volume.filter((c) => c.bucket > 0 && c.volume > 0);
+    if (points.length === 0) return;
+
+    const series = chart.addHistogramSeries({
+      priceFormat: { type: 'volume' },
+      priceScaleId: '',
+      color: color.border,
+    });
+    series.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+    // `volume` here actually carries the per-bucket count (the candles endpoint stamps
+    // close = the last quantity in the bucket). Use close as the histogram value.
+    const data: HistogramData[] = points.map((c) => ({
+      time: c.bucket as Time,
+      value: c.close,
+      color: 'rgba(120, 130, 145, 0.5)',
+    }));
+    series.setData(data);
+    volumeSeriesRef.current = series;
+  }, [volume]);
+
+  // OHLC / price readout under the cursor (small legend in top-left)
   const [hover, setHover] = useState<string>('');
   useEffect(() => {
     const chart = chartRef.current;
@@ -217,9 +307,9 @@ function ChartCanvas({
         setHover('');
         return;
       }
-      if (first.close != null) {
+      if (first.close != null && first.open != null) {
         setHover(
-          `O ${first.open?.toFixed(2)}  H ${first.high?.toFixed(2)}  L ${first.low?.toFixed(2)}  C ${first.close?.toFixed(2)}`,
+          `O ${first.open?.toFixed(2)}  H ${first.high?.toFixed(2)}  L ${first.low?.toFixed(2)}  C ${first.close?.toFixed(2)}g`,
         );
       } else if (first.value != null) {
         setHover(formatGoldShort(Math.round(first.value * 10000)));

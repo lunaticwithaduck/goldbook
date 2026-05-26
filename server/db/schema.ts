@@ -60,9 +60,15 @@ export const scans = sqliteTable(
     observedAt: integer('observed_at').notNull(),
     pricePerUnit: integer('price_per_unit').notNull(),
     stackSize: integer('stack_size').notNull().default(1),
-    // 'db' = AUCTIONATOR_PRICE_DATABASE (one snapshot per ingest, whole AH)
-    // 'history' = AUCTIONATOR_PRICING_HISTORY (per-scan, only watched items)
-    source: text('source', { enum: ['db', 'history'] }).notNull(),
+    // Free-form tag identifying where the price point came from. Known values:
+    //   'db'                    — AUCTIONATOR_PRICE_DATABASE (one snapshot per ingest)
+    //   'history'               — AUCTIONATOR_PRICING_HISTORY (per-scan, watched items)
+    //   'nerfed:buyout_min'     — ah.nerfed.net backfill, min buyout per day
+    //   'nerfed:buyout_median'  — ah.nerfed.net backfill, median buyout per day
+    //   'nerfed:bid_mean'       — ah.nerfed.net backfill, mean bid per day
+    //   'nerfed:bid_median'     — ah.nerfed.net backfill, median bid per day
+    //   'nerfed:quantity'       — ah.nerfed.net backfill, auctions-posted count
+    source: text('source').notNull(),
     ingestId: integer('ingest_id').references(() => ingests.id, { onDelete: 'set null' }),
   },
   (t) => ({
@@ -76,6 +82,21 @@ export const scans = sqliteTable(
     observedIdx: index('scans_observed_idx').on(t.observedAt),
   }),
 );
+
+/**
+ * Per-meta-item state for the ah.nerfed.net backfill. Used to make `pnpm backfill`
+ * resumable across crashes / SIGINT and to avoid re-scraping items we've already
+ * covered. Keyed on Wowhead/Blizzard item id (matches item_meta.id and items.metaId).
+ */
+export const backfillState = sqliteTable('backfill_state', {
+  metaId: integer('meta_id').primaryKey(),
+  realm: text('realm').notNull(), // e.g. "Icecrown_Horde"; future-proofs cross-realm runs
+  status: text('status', { enum: ['pending', 'done', 'no_data', 'error'] }).notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  lastAttemptAt: integer('last_attempt_at'),
+  scansInserted: integer('scans_inserted').notNull().default(0),
+  errorMessage: text('error_message'),
+});
 
 export const ingests = sqliteTable('ingests', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -99,3 +120,4 @@ export type NewScan = typeof scans.$inferInsert;
 export type Ingest = typeof ingests.$inferSelect;
 export type ItemMeta = typeof itemMeta.$inferSelect;
 export type NewItemMeta = typeof itemMeta.$inferInsert;
+export type BackfillState = typeof backfillState.$inferSelect;

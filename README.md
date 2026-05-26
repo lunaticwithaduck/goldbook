@@ -76,6 +76,33 @@ Other scripts:
 - `pnpm lint` / `pnpm format` (Biome)
 - `pnpm db:generate` — regenerate SQL when `schema.ts` changes
 - `pnpm db:studio` — Drizzle Studio
+- `pnpm meta:fetch` — download and import Wowhead item metadata (icons, quality, AH categories)
+- `pnpm backfill` — backfill historical AH data from ah.nerfed.net (see below)
+
+## Backfill historical prices (ah.nerfed.net)
+
+`ah.nerfed.net` is a community-run tracker that has been scanning Warmane AHs daily
+since ~early 2023. Their per-item pages embed the full price history as a JS variable;
+`pnpm backfill` extracts that and stores it in our `scans` table tagged
+`source = 'nerfed:<series>'`.
+
+```bash
+pnpm backfill                       # default: realm=Icecrown_Horde, 2.5s/req + jitter
+pnpm backfill --delay 5000          # be even more polite
+pnpm backfill --limit 100           # smoke test with 100 items
+pnpm backfill --retry-errors        # also re-try items previously errored
+pnpm backfill --reset               # forget prior progress and start over
+```
+
+- **Safe to leave running unattended.** Catches `SIGINT`, persists progress per Wowhead
+  item id in `backfill_state`, and resumes from where it stopped on the next run.
+- **Five series stored per item:** `nerfed:buyout_min`, `nerfed:buyout_median`,
+  `nerfed:bid_mean`, `nerfed:bid_median`, `nerfed:quantity`. The chart only uses
+  `buyout_min` by default (`?sources=buyout_min`); pass `?sources=all` to see them all.
+- **Throttle.** Default 2.5s + 0–500ms jitter between requests. ah.nerfed.net is one
+  person's hobby project — don't tighten this without a reason.
+- **Scale.** ~6,300 unique items on Icecrown_Horde, ~5 hours at default throttle. Each
+  popular item carries ~1,100 daily timestamps × 5 series ≈ 5,500 rows.
 
 ## Design system
 

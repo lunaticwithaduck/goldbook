@@ -87,7 +87,14 @@ export const api = {
   taxonomy: () => get<{ categories: Category[] }>('/api/taxonomy'),
   items: (q: ItemsQuery = {}) =>
     get<{ items: ItemRow[]; total: number }>(`/api/items${buildQs(q)}`),
-  scans: (id: number) => get<{ item: ItemDetail; scans: ScanRow[] }>(`/api/items/${id}/scans`),
-  candles: (id: number, bucket: 'hour' | 'day') =>
-    get<{ candles: CandleRow[] }>(`/api/items/${id}/candles?bucket=${bucket}`),
+  scans: (id: number, sources?: string) =>
+    get<{ item: ItemDetail; scans: ScanRow[] }>(
+      `/api/items/${id}/scans${buildQs({ sources })}`,
+    ),
+  candles: (id: number, bucket: Bucket, sources?: string) =>
+    get<{ candles: CandleRow[] }>(
+      `/api/items/${id}/candles${buildQs({ bucket, sources })}`,
+    ),
 };
+
+export type Bucket = 'hour' | 'day' | 'week' | 'month';
