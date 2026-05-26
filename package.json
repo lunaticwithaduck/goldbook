@@ -12,6 +12,7 @@
     "ingest": "tsx server/parser/ingest.ts",
     "meta:fetch": "tsx server/parser/meta-import.ts",
     "backfill": "tsx server/parser/backfill.ts",
+    "flips": "tsx server/analysis/flips.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx server/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
