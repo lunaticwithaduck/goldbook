@@ -187,6 +187,27 @@ function main() {
       .where(eq(ingests.id, ingest.id))
       .run();
 
+    // Maintain the denormalized "current price" on items so the dashboard list view
+    // doesn't have to touch the (now 25M+ row) scans table. Only items touched by
+    // this ingest get updated; the rest keep their previous value.
+    tx.run(sql`
+      UPDATE items
+         SET latest_db_price = (
+               SELECT s.price_per_unit FROM scans s
+               WHERE s.item_id = items.id AND s.source = 'db'
+               ORDER BY s.observed_at DESC LIMIT 1
+             ),
+             latest_db_observed_at = (
+               SELECT s.observed_at FROM scans s
+               WHERE s.item_id = items.id AND s.source = 'db'
+               ORDER BY s.observed_at DESC LIMIT 1
+             )
+       WHERE realm = ${realm}
+         AND id IN (
+           SELECT item_id FROM scans WHERE ingest_id = ${ingest.id} AND source = 'db'
+         )
+    `);
+
     return ingest;
   });
 

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 import { Box, Input, Stack, Text } from '../../design-system/index.js';
 import { api, type ItemRow } from '../../lib/api.js';
 import { CategorySidebar } from './CategorySidebar.js';
@@ -9,7 +9,7 @@ type Props = {
   onSelectItem: (item: ItemRow) => void;
 };
 
-const PAGE_LIMIT = 500;
+const PAGE_SIZE = 60;
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -25,15 +25,33 @@ export function Dashboard({ onSelectItem }: Props) {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounced(search, 200);
 
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    isFetchingNextPage,
+    fetchNextPage,
+    hasNextPage,
+  } = useInfiniteQuery({
     queryKey: ['items', category, debouncedSearch],
-    queryFn: () =>
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
       api.items({
         category: category ?? undefined,
         q: debouncedSearch || undefined,
-        limit: PAGE_LIMIT,
+        limit: PAGE_SIZE,
+        offset: pageParam,
       }),
+    getNextPageParam: (last) => {
+      const nextOffset = last.offset + last.items.length;
+      return nextOffset < last.total ? nextOffset : undefined;
+    },
   });
+
+  const items = useMemo(
+    () => (data?.pages ?? []).flatMap((p) => p.items),
+    [data],
+  );
+  const total = data?.pages[0]?.total ?? 0;
 
   return (
     <Box
@@ -78,10 +96,15 @@ export function Dashboard({ onSelectItem }: Props) {
           style={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}
         >
           <ItemGrid
-            items={data?.items ?? []}
-            total={data?.total}
+            items={items}
+            total={total}
             onSelect={onSelectItem}
             loading={isLoading}
+            fetchingMore={isFetchingNextPage}
+            hasMore={!!hasNextPage}
+            onEndReached={() => {
+              if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+            }}
           />
         </Box>
       </Stack>

@@ -17,7 +17,13 @@ export function Card({
       radius={3}
       p={padded ? 4 : undefined}
       flex={flex}
-      style={{ display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0 }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        minWidth: 0,
+        boxShadow: 'var(--shadow-md)',
+      }}
     >
       {children}
     </Box>

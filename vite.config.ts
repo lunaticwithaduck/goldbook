@@ -9,6 +9,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  optimizeDeps: {
+    // Force include so v5 is correctly pre-bundled (v4 → v5 caused stale-cache misery).
+    include: ['lightweight-charts', 'lucide-react', '@fontsource-variable/inter'],
+  },
   server: {
     port: 5173,
     proxy: {

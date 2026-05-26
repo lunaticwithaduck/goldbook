@@ -40,7 +40,7 @@ app.get('/api/items', (c) => {
   const q = c.req.query('q')?.trim();
   const category = c.req.query('category')?.trim();
   const qualityMin = c.req.query('qualityMin');
-  const limit = Math.min(Number(c.req.query('limit') ?? 200), 5000);
+  const limit = Math.min(Number(c.req.query('limit') ?? 60), 500);
   const offset = Math.max(Number(c.req.query('offset') ?? 0), 0);
 
   const filters: SQL[] = [];
@@ -50,53 +50,35 @@ app.get('/api/items', (c) => {
 
   const where = filters.length > 0 ? and(...filters) : undefined;
 
+  // List view fetches only what the tile renders. Price is read straight from the
+  // denormalized `items.latest_db_price` (maintained by the ingest CLI), so this
+  // endpoint never touches the (>25M row) scans table.
   const rows = db
     .select({
       id: items.id,
       name: items.name,
-      realm: items.realm,
       randomSuffix: items.randomSuffix,
-      metaId: itemMeta.id,
       icon: itemMeta.icon,
       quality: itemMeta.quality,
       category: itemMeta.category,
-      classId: itemMeta.classId,
-      subclassId: itemMeta.subclassId,
-      scanCount: sql<number>`count(${scans.id})`.as('scan_count'),
-      latestPrice: sql<number | null>`(
-        select ${scans.pricePerUnit}
-        from ${scans}
-        where ${scans.itemId} = ${items.id}
-        order by ${scans.observedAt} desc
-        limit 1
-      )`.as('latest_price'),
-      latestObservedAt: sql<number | null>`(
-        select ${scans.observedAt}
-        from ${scans}
-        where ${scans.itemId} = ${items.id}
-        order by ${scans.observedAt} desc
-        limit 1
-      )`.as('latest_observed_at'),
+      latestPrice: items.latestDbPrice,
     })
     .from(items)
     .leftJoin(itemMeta, eq(itemMeta.id, items.metaId))
-    .leftJoin(scans, eq(scans.itemId, items.id))
     .where(where)
-    .groupBy(items.id)
     .orderBy(asc(items.name))
     .limit(limit)
     .offset(offset)
     .all();
 
-  // Total count (matching filters), for pagination
   const totalRow = db
-    .select({ n: sql<number>`count(distinct ${items.id})` })
+    .select({ n: sql<number>`count(*)` })
     .from(items)
     .leftJoin(itemMeta, eq(itemMeta.id, items.metaId))
     .where(where)
     .get();
 
-  return c.json({ items: rows, total: totalRow?.n ?? 0 });
+  return c.json({ items: rows, total: totalRow?.n ?? 0, limit, offset });
 });
 
 // Default "primary price" series for the chart: median buyout is the most stable

@@ -1,5 +1,5 @@
 import { Slot } from '@radix-ui/react-slot';
-import { type ButtonHTMLAttributes, type CSSProperties, forwardRef } from 'react';
+import { type ButtonHTMLAttributes, type CSSProperties, forwardRef, useState } from 'react';
 
 type Variant = 'solid' | 'soft' | 'ghost';
 type Size = 'sm' | 'md';
@@ -23,29 +23,43 @@ const sizeStyles: Record<Size, CSSProperties> = {
   },
 };
 
-const variantStyles: Record<Variant, CSSProperties> = {
+const variantStyles: Record<Variant, { base: CSSProperties; hover: CSSProperties }> = {
   solid: {
-    background: 'var(--color-text)',
-    color: 'var(--color-bg)',
-    border: '1px solid var(--color-text)',
+    base: {
+      background: 'var(--color-text)',
+      color: 'var(--color-bg)',
+      border: '1px solid var(--color-text)',
+    },
+    hover: { background: '#fff', borderColor: '#fff' },
   },
   soft: {
-    background: 'var(--color-surface)',
-    color: 'var(--color-text)',
-    border: '1px solid var(--color-border)',
+    base: {
+      background: 'var(--color-surface)',
+      color: 'var(--color-text)',
+      border: '1px solid var(--color-border)',
+    },
+    hover: {
+      background: 'color-mix(in srgb, var(--color-surface) 70%, var(--color-text) 6%)',
+      borderColor: 'color-mix(in srgb, var(--color-border) 60%, var(--color-text) 12%)',
+    },
   },
   ghost: {
-    background: 'transparent',
-    color: 'var(--color-text)',
-    border: '1px solid transparent',
+    base: {
+      background: 'transparent',
+      color: 'var(--color-text)',
+      border: '1px solid transparent',
+    },
+    hover: { background: 'rgba(255,255,255,0.04)' },
   },
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'soft', size = 'md', asChild, style, ...rest },
+  { variant = 'soft', size = 'md', asChild, style, onMouseEnter, onMouseLeave, ...rest },
   ref,
 ) {
+  const [hovered, setHovered] = useState(false);
   const Comp = (asChild ? Slot : 'button') as 'button';
+  const v = variantStyles[variant];
   const css: CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
@@ -54,10 +68,25 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     borderRadius: 'var(--radius-2)',
     fontWeight: 'var(--weight-medium)',
     cursor: 'pointer',
-    transition: 'opacity 120ms ease',
+    whiteSpace: 'nowrap',
     ...sizeStyles[size],
-    ...variantStyles[variant],
+    ...v.base,
+    ...(hovered ? v.hover : null),
     ...style,
   };
-  return <Comp ref={ref} style={css} {...rest} />;
+  return (
+    <Comp
+      ref={ref}
+      style={css}
+      onMouseEnter={(e) => {
+        setHovered(true);
+        onMouseEnter?.(e);
+      }}
+      onMouseLeave={(e) => {
+        setHovered(false);
+        onMouseLeave?.(e);
+      }}
+      {...rest}
+    />
+  );
 });

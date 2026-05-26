@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { Box, Button, Icon, Separator, Stack, Text } from './design-system/index.js';
 import { Dashboard } from './features/dashboard/Dashboard.js';
@@ -67,7 +68,8 @@ function TopBar({
         {selected ? (
           <>
             <Button size="sm" variant="soft" onClick={onBack}>
-              ← Back
+              <ArrowLeft size={14} />
+              Back
             </Button>
             <Icon icon={selected.icon} quality={selected.quality} size={28} />
             <Text size={4} weight="medium" style={{ color: qualityColor(selected.quality) }}>

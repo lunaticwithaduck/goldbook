@@ -39,6 +39,11 @@ export const items = sqliteTable(
     metaId: integer('meta_id').references(() => itemMeta.id, { onDelete: 'set null' }),
     // The random-property suffix portion (e.g. "of Power") stripped during meta matching.
     randomSuffix: text('random_suffix'),
+    // Denormalized "current price" from the latest source='db' scan. Maintained by the
+    // ingest CLI so the dashboard list view can render without touching the scans table
+    // (which is now >25M rows after the nerfed backfill).
+    latestDbPrice: integer('latest_db_price'),
+    latestDbObservedAt: integer('latest_db_observed_at'),
     createdAt: integer('created_at').notNull().default(sql`(unixepoch())`),
   },
   (t) => ({

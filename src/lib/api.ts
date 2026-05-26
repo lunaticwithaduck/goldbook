@@ -1,17 +1,18 @@
 export type ItemRow = {
   id: number;
   name: string;
-  realm: string;
   randomSuffix: string | null;
-  metaId: number | null;
   icon: string | null;
   quality: number | null;
   category: string | null;
-  classId: number | null;
-  subclassId: number | null;
-  scanCount: number;
   latestPrice: number | null;
-  latestObservedAt: number | null; // unix seconds
+};
+
+export type ItemsPage = {
+  items: ItemRow[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 export type ItemDetail = {
@@ -85,8 +86,7 @@ function buildQs(q: Record<string, unknown>): string {
 export const api = {
   stats: () => get<Stats>('/api/stats'),
   taxonomy: () => get<{ categories: Category[] }>('/api/taxonomy'),
-  items: (q: ItemsQuery = {}) =>
-    get<{ items: ItemRow[]; total: number }>(`/api/items${buildQs(q)}`),
+  items: (q: ItemsQuery = {}) => get<ItemsPage>(`/api/items${buildQs(q)}`),
   scans: (id: number, sources?: string) =>
     get<{ item: ItemDetail; scans: ScanRow[] }>(
       `/api/items/${id}/scans${buildQs({ sources })}`,
