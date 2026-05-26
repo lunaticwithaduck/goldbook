@@ -56,6 +56,9 @@ export function ItemGrid({
 
 const GridList = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   function GridList(props, ref) {
+    // React warns if `padding` (shorthand) and `paddingBottom` (longhand) are both
+    // set on the same element; virtuoso writes paddingBottom dynamically for spacer
+    // height, so we use longhand-only here to stay out of its way.
     return (
       <div
         ref={ref}
@@ -65,7 +68,9 @@ const GridList = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
           gap: 'var(--space-2)',
-          padding: '0 var(--space-2) var(--space-4)',
+          paddingTop: 0,
+          paddingLeft: 'var(--space-2)',
+          paddingRight: 'var(--space-2)',
         }}
       />
     );

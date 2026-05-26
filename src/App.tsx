@@ -20,7 +20,7 @@ export function App() {
           style={{
             flex: 1,
             minHeight: 0,
-            padding: 'var(--space-3)',
+            padding: 'var(--space-5)',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -29,8 +29,14 @@ export function App() {
             bg="surface"
             border="border"
             radius={3}
-            p={4}
-            style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+            p={5}
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-md)',
+            }}
           >
             <PriceChart itemId={selected.id} itemName={selected.name} />
           </Box>
@@ -60,7 +66,7 @@ function TopBar({
       justify="between"
       gap={4}
       style={{
-        padding: 'var(--space-3) var(--space-4)',
+        padding: 'var(--space-4) var(--space-5)',
         background: 'var(--color-surface)',
       }}
     >

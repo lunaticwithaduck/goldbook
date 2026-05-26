@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
+  AreaSeries,
   CandlestickSeries,
   type CandlestickData,
   ColorType,
@@ -12,7 +13,13 @@ import {
   type Time,
   createChart,
 } from 'lightweight-charts';
-import { ArrowDown, ArrowUp, BarChart3, LineChart as LineIcon } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  BarChart3,
+  LineChart as LineIcon,
+  AreaChart as AreaIcon,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Button, Stack, Text } from '../../design-system/index.js';
 import { color } from '../../design-system/tokens.js';
@@ -20,12 +27,13 @@ import { api, type Bucket, type CandleRow } from '../../lib/api.js';
 import { formatGoldShort } from '../../lib/currency.js';
 
 type Mode = 'candles' | 'line';
+type VolumeMode = 'histogram' | 'line' | 'area' | 'candles';
 type Series =
   | 'nerfed:buyout_median'
   | 'nerfed:buyout_min'
   | 'nerfed:bid_median'
   | 'nerfed:bid_mean';
-type Range = '1M' | '3M' | '6M' | '1Y' | 'ALL';
+type Range = '30d' | '90d' | '180d' | '1y' | 'all';
 
 const SERIES_LABEL: Record<Series, string> = {
   'nerfed:buyout_median': 'Median',
@@ -48,12 +56,15 @@ const BUCKET_WORD: Record<Bucket, string> = {
   month: 'monthly',
 };
 
+// Range = how much HISTORY to show. Bucket = how each candle is AGGREGATED. They
+// used to collide because both groups had a "1M" button — range labels were
+// renamed to "30d / 90d / 180d / 1y / all" to remove the ambiguity.
 const RANGE_DAYS: Record<Range, number | null> = {
-  '1M': 30,
-  '3M': 90,
-  '6M': 180,
-  '1Y': 365,
-  ALL: null,
+  '30d': 30,
+  '90d': 90,
+  '180d': 180,
+  '1y': 365,
+  all: null,
 };
 
 const COPPER = 10000;
@@ -70,9 +81,10 @@ type Props = {
 
 export function PriceChart({ itemId, itemName }: Props) {
   const [mode, setMode] = useState<Mode>('line');
+  const [volumeMode, setVolumeMode] = useState<VolumeMode>('histogram');
   const [bucket, setBucket] = useState<Bucket>('day');
   const [series, setSeries] = useState<Series>('nerfed:buyout_median');
-  const [range, setRange] = useState<Range>('3M');
+  const [range, setRange] = useState<Range>('90d');
 
   // Switching to OHLC nudges bucket to 1W so candles have intra-bucket range.
   useEffect(() => {
@@ -120,47 +132,68 @@ export function PriceChart({ itemId, itemName }: Props) {
             {allCandles.length} {BUCKET_WORD[bucket]} buckets · {SERIES_LABEL[series]} buyout
           </Text>
         </Stack>
-        <Stack direction="row" gap={2} wrap>
-          <ToggleGroup
-            value={series}
-            onChange={setSeries}
-            options={(Object.keys(SERIES_LABEL) as Series[]).map((s) => ({
-              v: s,
-              label: SERIES_LABEL[s],
-            }))}
-          />
-          <ToggleGroup
-            value={mode}
-            onChange={setMode}
-            options={[
-              { v: 'candles', label: 'OHLC', icon: <BarChart3 size={14} /> },
-              { v: 'line', label: 'Line', icon: <LineIcon size={14} /> },
-            ]}
-          />
-          <ToggleGroup
-            value={bucket}
-            onChange={setBucket}
-            options={(Object.keys(BUCKET_LABEL) as Bucket[]).map((b) => ({
-              v: b,
-              label: BUCKET_LABEL[b],
-            }))}
-          />
+        <Stack direction="row" gap={3} wrap align="end">
+          <LabeledGroup label="series">
+            <ToggleGroup
+              value={series}
+              onChange={setSeries}
+              options={(Object.keys(SERIES_LABEL) as Series[]).map((s) => ({
+                v: s,
+                label: SERIES_LABEL[s],
+              }))}
+            />
+          </LabeledGroup>
+          <LabeledGroup label="price">
+            <ToggleGroup
+              value={mode}
+              onChange={setMode}
+              options={[
+                { v: 'candles', label: 'OHLC', icon: <BarChart3 size={14} /> },
+                { v: 'line', label: 'Line', icon: <LineIcon size={14} /> },
+              ]}
+            />
+          </LabeledGroup>
+          <LabeledGroup label="volume">
+            <ToggleGroup
+              value={volumeMode}
+              onChange={setVolumeMode}
+              options={[
+                { v: 'histogram', label: 'Bar', icon: <BarChart3 size={14} /> },
+                { v: 'line', label: 'Line', icon: <LineIcon size={14} /> },
+                { v: 'area', label: 'Area', icon: <AreaIcon size={14} /> },
+                { v: 'candles', label: 'OHLC', icon: <BarChart3 size={14} /> },
+              ]}
+            />
+          </LabeledGroup>
+          <LabeledGroup label="bucket">
+            <ToggleGroup
+              value={bucket}
+              onChange={setBucket}
+              options={(Object.keys(BUCKET_LABEL) as Bucket[]).map((b) => ({
+                v: b,
+                label: BUCKET_LABEL[b],
+              }))}
+            />
+          </LabeledGroup>
         </Stack>
       </Stack>
 
       <KpiStrip kpis={kpis} />
 
       <Stack direction="row" justify="between" align="center">
-        <ToggleGroup
-          value={range}
-          onChange={setRange}
-          options={(Object.keys(RANGE_DAYS) as Range[]).map((r) => ({ v: r, label: r }))}
-        />
+        <LabeledGroup label="range">
+          <ToggleGroup
+            value={range}
+            onChange={setRange}
+            options={(Object.keys(RANGE_DAYS) as Range[]).map((r) => ({ v: r, label: r }))}
+          />
+        </LabeledGroup>
       </Stack>
 
       <Box flex={1} style={{ position: 'relative', minHeight: 0 }}>
         <ChartCanvas
           mode={mode}
+          volumeMode={volumeMode}
           candles={allCandles}
           scans={scanData?.scans ?? []}
           volume={allVolume}
@@ -304,6 +337,17 @@ function Kpi({
 
 // ---------- Toggle ----------
 
+function LabeledGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <Stack gap={1}>
+      <Text size={1} muted style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {label}
+      </Text>
+      {children}
+    </Stack>
+  );
+}
+
 function ToggleGroup<T extends string>({
   value,
   onChange,
@@ -336,12 +380,14 @@ type Scan = { observedAt: number; pricePerUnit: number };
 
 function ChartCanvas({
   mode,
+  volumeMode,
   candles,
   scans,
   volume,
   rangeStart,
 }: {
   mode: Mode;
+  volumeMode: VolumeMode;
   candles: CandleRow[];
   scans: Scan[];
   volume: CandleRow[];
@@ -350,7 +396,13 @@ function ChartCanvas({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const priceSeriesRef = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Line'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const volumeSeriesRef = useRef<
+    | ISeriesApi<'Histogram'>
+    | ISeriesApi<'Line'>
+    | ISeriesApi<'Area'>
+    | ISeriesApi<'Candlestick'>
+    | null
+  >(null);
 
   // Create chart once. Volume goes in pane index 1; price stays in pane 0.
   useEffect(() => {
@@ -376,6 +428,10 @@ function ChartCanvas({
       crosshair: { mode: 1 },
       autoSize: true,
     });
+    // v5 requires the volume pane to exist before addSeries(..., paneIndex=1) — the
+    // call is silently a no-op (series falls back to pane 0) if the pane is missing.
+    chart.addPane();
+
     chartRef.current = chart;
     return () => {
       chart.remove();
@@ -460,7 +516,10 @@ function ChartCanvas({
     priceSeriesRef.current = s;
   }, [mode, candles, scans]);
 
-  // Volume histogram — pane 1 (truly separate). Coloured by price direction.
+  // Volume pane (pane index 1) — separate from price. Switchable between Bar / Line
+  // / Area / OHLC because none of the four is universally best: histogram is the
+  // TradingView default but lines/areas reveal trends, and OHLC is meaningful for
+  // weekly+ buckets where multiple daily counts roll up.
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -468,9 +527,18 @@ function ChartCanvas({
       chart.removeSeries(volumeSeriesRef.current);
       volumeSeriesRef.current = null;
     }
-    const points = volume.filter((c) => c.bucket > 0 && c.close > 0);
-    if (points.length === 0) return;
+    // Re-create pane 1 if it was lost (v5 collapses panes whose last series is
+    // removed). Without this, switching bucket/range can leave us with only the
+    // price pane until the chart is reloaded.
+    if (chart.panes().length < 2) chart.addPane();
 
+    const points = volume.filter((c) => c.bucket > 0 && c.close > 0);
+    // Even with no data we keep an empty series alive in pane 1 so the pane doesn't
+    // disappear when the user toggles to a series/range that has zero volume.
+    const hasPoints = points.length > 0;
+
+    // Per-bucket direction colour map, driven by the price series so volume bars
+    // green/red follow price closes (TradingView convention).
     const priceByBucket = new Map<number, number>();
     for (const c of candles) priceByBucket.set(c.bucket, c.close);
     const sortedBuckets = [...priceByBucket.keys()].sort((a, b) => a - b);
@@ -484,46 +552,116 @@ function ChartCanvas({
       return close >= prev ? 'up' : 'down';
     };
 
-    const s = chart.addSeries(
-      HistogramSeries,
-      {
-        priceFormat: { type: 'volume' },
-        priceScaleId: 'right',
-        color: 'rgba(120, 130, 145, 0.55)',
-      },
-      1,
-    );
+    const volPriceFormat = { type: 'volume' as const };
+    let s:
+      | ISeriesApi<'Histogram'>
+      | ISeriesApi<'Line'>
+      | ISeriesApi<'Area'>
+      | ISeriesApi<'Candlestick'>;
 
-    // Make the volume pane shorter than price so the chart is mostly price.
+    if (volumeMode === 'histogram') {
+      s = chart.addSeries(
+        HistogramSeries,
+        { priceFormat: volPriceFormat, color: 'rgba(120, 130, 145, 0.55)' },
+        1,
+      );
+      const data: HistogramData[] = hasPoints
+        ? points.map((c) => {
+            const dir = priceDirAtBucket(c.bucket);
+            const col =
+              dir === 'up'
+                ? 'rgba(38, 166, 154, 0.6)'
+                : dir === 'down'
+                  ? 'rgba(239, 83, 80, 0.6)'
+                  : 'rgba(120, 130, 145, 0.5)';
+            return { time: c.bucket as Time, value: c.close, color: col };
+          })
+        : [];
+      s.setData(data);
+    } else if (volumeMode === 'line') {
+      s = chart.addSeries(
+        LineSeries,
+        { priceFormat: volPriceFormat, color: 'rgba(180, 195, 215, 0.9)', lineWidth: 1 },
+        1,
+      );
+      const data: LineData[] = hasPoints
+        ? points
+            .map((c) => ({ time: c.bucket as Time, value: c.close }))
+            .sort((a, b) => (a.time as number) - (b.time as number))
+        : [];
+      s.setData(data);
+    } else if (volumeMode === 'area') {
+      s = chart.addSeries(
+        AreaSeries,
+        {
+          priceFormat: volPriceFormat,
+          lineColor: 'rgba(180, 195, 215, 0.9)',
+          topColor: 'rgba(120, 130, 145, 0.45)',
+          bottomColor: 'rgba(120, 130, 145, 0.05)',
+          lineWidth: 1,
+        },
+        1,
+      );
+      const data: LineData[] = hasPoints
+        ? points
+            .map((c) => ({ time: c.bucket as Time, value: c.close }))
+            .sort((a, b) => (a.time as number) - (b.time as number))
+        : [];
+      s.setData(data);
+    } else {
+      // OHLC — uses the open/high/low/close already provided by the candles endpoint
+      // for the nerfed:quantity source. At daily granularity these are degenerate
+      // (O=H=L=C), but at weekly+ they show real range.
+      s = chart.addSeries(
+        CandlestickSeries,
+        {
+          upColor: color.up,
+          downColor: color.down,
+          wickUpColor: color.up,
+          wickDownColor: color.down,
+          borderVisible: false,
+          priceFormat: volPriceFormat,
+        },
+        1,
+      );
+      const data: CandlestickData[] = hasPoints
+        ? points.map((c) => ({
+            time: c.bucket as Time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+          }))
+        : [];
+      s.setData(data);
+    }
+
+    // Always pin the volume pane height; v5 will shrink it to zero otherwise on
+    // bucket/series swaps where the series is briefly absent.
     const panes = chart.panes();
     if (panes.length > 1) panes[1].setHeight(110);
 
-    const data: HistogramData[] = points.map((c) => {
-      const dir = priceDirAtBucket(c.bucket);
-      const col =
-        dir === 'up'
-          ? 'rgba(38, 166, 154, 0.6)'
-          : dir === 'down'
-            ? 'rgba(239, 83, 80, 0.6)'
-            : 'rgba(120, 130, 145, 0.5)';
-      return { time: c.bucket as Time, value: c.close, color: col };
-    });
-    s.setData(data);
     volumeSeriesRef.current = s;
-  }, [volume, candles]);
+  }, [volume, candles, volumeMode]);
 
   // Range selector → visible window; Y auto-fits to that window in each pane.
+  // Wrap setVisibleRange — lightweight-charts throws "Value is null" if it's called
+  // before any series has plotted data (effect order is unstable across renders).
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    if (rangeStart > 0) {
-      const last = candles.at(-1)?.bucket ?? volume.at(-1)?.bucket;
-      if (last && last > rangeStart) {
-        chart.timeScale().setVisibleRange({ from: rangeStart as Time, to: last as Time });
-        return;
+    try {
+      if (rangeStart > 0) {
+        const last = candles.at(-1)?.bucket ?? volume.at(-1)?.bucket;
+        if (last && last > rangeStart) {
+          chart.timeScale().setVisibleRange({ from: rangeStart as Time, to: last as Time });
+          return;
+        }
       }
+      chart.timeScale().fitContent();
+    } catch {
+      // Series not ready yet; next render after setData will retry.
     }
-    chart.timeScale().fitContent();
   }, [rangeStart, candles, volume]);
 
   // Hover legend (date + price + volume)

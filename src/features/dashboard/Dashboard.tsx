@@ -57,11 +57,11 @@ export function Dashboard({ onSelectItem }: Props) {
     <Box
       style={{
         display: 'grid',
-        gridTemplateColumns: '240px 1fr',
+        gridTemplateColumns: '260px 1fr',
         flex: 1,
         minHeight: 0,
-        gap: 'var(--space-3)',
-        padding: 'var(--space-3)',
+        gap: 'var(--space-4)',
+        padding: 'var(--space-5)',
       }}
     >
       <Box
