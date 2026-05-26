@@ -3,17 +3,30 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { Box, Button, Icon, Separator, Stack, Text } from './design-system/index.js';
 import { Dashboard } from './features/dashboard/Dashboard.js';
+import { Flips } from './features/flips/Flips.js';
 import { PriceChart } from './features/price-chart/PriceChart.js';
 import { api, type ItemRow, type Stats } from './lib/api.js';
 import { qualityColor } from './lib/wow.js';
 
+type View = 'browse' | 'flips';
+
 export function App() {
   const [selected, setSelected] = useState<ItemRow | null>(null);
+  const [view, setView] = useState<View>('browse');
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: api.stats });
 
   return (
     <Box style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <TopBar stats={stats} selected={selected} onBack={() => setSelected(null)} />
+      <TopBar
+        stats={stats}
+        selected={selected}
+        view={view}
+        onBack={() => setSelected(null)}
+        onSelectView={(v) => {
+          setSelected(null);
+          setView(v);
+        }}
+      />
       <Separator />
       {selected ? (
         <Box
@@ -41,6 +54,8 @@ export function App() {
             <PriceChart itemId={selected.id} itemName={selected.name} />
           </Box>
         </Box>
+      ) : view === 'flips' ? (
+        <Flips onSelectItem={setSelected} />
       ) : (
         <Dashboard onSelectItem={setSelected} />
       )}
@@ -51,11 +66,15 @@ export function App() {
 function TopBar({
   stats,
   selected,
+  view,
   onBack,
+  onSelectView,
 }: {
   stats: Stats | undefined;
   selected: ItemRow | null;
+  view: View;
   onBack: () => void;
+  onSelectView: (v: View) => void;
 }) {
   const last = stats?.lastIngest;
   const insertedTotal = last ? last.dbInserted + last.historyInserted : 0;
@@ -96,6 +115,10 @@ function TopBar({
             <Text size={2} muted>
               Warmane WotLK AH price tracker
             </Text>
+            <Stack direction="row" gap={1} style={{ marginLeft: 'var(--space-4)' }}>
+              <NavTab label="Browse" active={view === 'browse'} onClick={() => onSelectView('browse')} />
+              <NavTab label="Flips" active={view === 'flips'} onClick={() => onSelectView('flips')} />
+            </Stack>
           </>
         )}
       </Stack>
@@ -114,6 +137,22 @@ function TopBar({
         <Stat label="realm" value={last?.realm ?? '—'} />
       </Stack>
     </Stack>
+  );
+}
+
+function NavTab({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button size="sm" variant={active ? 'solid' : 'ghost'} onClick={onClick}>
+      {label}
+    </Button>
   );
 }
 

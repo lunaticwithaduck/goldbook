@@ -2,10 +2,11 @@ import { serve } from '@hono/node-server';
 import { and, asc, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { findFlips, GOLD, pickRealm } from './analysis/flipFinder.js';
 import { openDb } from './db/client.js';
 import { ingests, itemMeta, items, scans } from './db/schema.js';
 
-const { db } = openDb();
+const { db, sqlite } = openDb();
 const app = new Hono();
 
 app.get('/api/health', (c) => c.json({ ok: true }));
@@ -215,6 +216,48 @@ app.get('/api/items/:id/candles', (c) => {
   `);
 
   return c.json({ candles: rows, sources });
+});
+
+// Cached flip results — the 7-day-quantity grouped scan takes ~10s on the 30M-row
+// scans table. Cache for a few minutes per distinct query so the dashboard feels
+// instant after the first compute. Auctionator dumps come in once or twice a day
+// so this is not stale-sensitive on a sub-minute scale.
+const FLIPS_TTL_MS = 5 * 60_000;
+const flipsCache = new Map<string, { at: number; payload: unknown }>();
+
+function numParam(c: { req: { query: (k: string) => string | undefined } }, key: string): number | undefined {
+  const v = c.req.query(key);
+  if (v == null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+app.get('/api/flips', (c) => {
+  let realm: string;
+  try {
+    realm = pickRealm(sqlite, c.req.query('realm'));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+  const opts = {
+    realm,
+    bankrollCopper: Math.round((numParam(c, 'bankroll') ?? 20000) * GOLD),
+    topCandidates: Math.min(numParam(c, 'top') ?? 120, 500),
+    positions: Math.min(numParam(c, 'positions') ?? 6, 30),
+    minVolume: numParam(c, 'minVolume') ?? 500,
+    minEdgePct: numParam(c, 'minEdge') ?? 25,
+    maxFloorCopper: Math.round((numParam(c, 'maxFloor') ?? 300) * GOLD),
+    minFloorCopper: Math.round((numParam(c, 'minFloor') ?? 0.1) * GOLD),
+    excludeProjectiles: c.req.query('includeProjectiles') !== '1',
+  };
+  const key = JSON.stringify(opts);
+  const hit = flipsCache.get(key);
+  if (hit && Date.now() - hit.at < FLIPS_TTL_MS) {
+    return c.json(hit.payload);
+  }
+  const result = findFlips(db, sqlite, opts);
+  flipsCache.set(key, { at: Date.now(), payload: result });
+  return c.json(result);
 });
 
 const port = Number(process.env.PORT ?? 3001);

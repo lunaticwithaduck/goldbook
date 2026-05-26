@@ -95,6 +95,46 @@ export const api = {
     get<{ candles: CandleRow[] }>(
       `/api/items/${id}/candles${buildQs({ bucket, sources })}`,
     ),
+  flips: (q: FlipsQuery = {}) => get<FlipsResult>(`/api/flips${buildQs(q)}`),
 };
 
 export type Bucket = 'hour' | 'day' | 'week' | 'month';
+
+export type FlipsQuery = {
+  realm?: string;
+  bankroll?: number;
+  positions?: number;
+  minEdge?: number;
+  minVolume?: number;
+  maxFloor?: number;
+  minFloor?: number;
+  includeProjectiles?: 0 | 1;
+};
+
+export type FlipCandidate = {
+  itemId: number;
+  name: string;
+  category: string | null;
+  classId: number | null;
+  icon: string | null;
+  quality: number | null;
+  floorCopper: number;
+  medianCopper: number;
+  avgQtyPerDay: number;
+  stackSize: number;
+};
+
+export type FlipPick = FlipCandidate & {
+  edgePct: number;
+  suggestedUnits: number;
+  costCopper: number;
+  estProfitCopper: number;
+};
+
+export type FlipsResult = {
+  realm: string;
+  picks: FlipPick[];
+  traps: FlipCandidate[];
+  totalCostCopper: number;
+  totalProfitCopper: number;
+};
