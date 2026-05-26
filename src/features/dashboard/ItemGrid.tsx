@@ -1,9 +1,9 @@
-import { forwardRef } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
 import { Icon, Stack, Text } from '../../design-system/index.js';
 import type { ItemRow } from '../../lib/api.js';
 import { formatGoldShort } from '../../lib/currency.js';
 import { qualityColor } from '../../lib/wow.js';
+import './item-grid.css';
 
 type Props = {
   items: ItemRow[];
@@ -38,68 +38,40 @@ export function ItemGrid({
           <Text size={1} muted>
             loading more…
           </Text>
+        ) : !hasMore && items.length > 0 ? (
+          <Text size={1} muted>
+            (end)
+          </Text>
         ) : null}
       </Stack>
       <div style={{ flex: 1, minHeight: 0 }}>
         <VirtuosoGrid
           style={{ height: '100%' }}
           data={items}
-          endReached={() => onEndReached?.()}
-          increaseViewportBy={400}
-          components={{ List: GridList, Item: GridItem, Footer: () => <GridFooter hasMore={!!hasMore} fetchingMore={!!fetchingMore} /> }}
+          listClassName="goldbook-item-grid"
+          itemClassName="goldbook-item-grid-cell"
+          endReached={() => {
+            console.log('[goldbook] virtuoso endReached, items=', items.length);
+            onEndReached?.();
+          }}
+          rangeChanged={({ endIndex }) => {
+            // Prefetch when within ~30 items of the rendered end. This is the only
+            // signal that fires reliably as data grows; endReached alone won't
+            // re-fire after the very first end-of-list hit.
+            if (endIndex >= items.length - 30) {
+              console.log(
+                '[goldbook] virtuoso rangeChanged near end: endIndex=',
+                endIndex,
+                'items=',
+                items.length,
+              );
+              onEndReached?.();
+            }
+          }}
           itemContent={(_, item) => <Tile item={item} onClick={() => onSelect(item)} />}
         />
       </div>
     </Stack>
-  );
-}
-
-const GridList = forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
-  function GridList(props, ref) {
-    // React warns if `padding` (shorthand) and `paddingBottom` (longhand) are both
-    // set on the same element; virtuoso writes paddingBottom dynamically for spacer
-    // height, so we use longhand-only here to stay out of its way.
-    return (
-      <div
-        ref={ref}
-        {...props}
-        style={{
-          ...props.style,
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: 'var(--space-2)',
-          paddingTop: 0,
-          paddingLeft: 'var(--space-2)',
-          paddingRight: 'var(--space-2)',
-        }}
-      />
-    );
-  },
-);
-
-function GridItem({ children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div {...rest} style={{ ...rest.style, display: 'flex' }}>
-      {children}
-    </div>
-  );
-}
-
-function GridFooter({ hasMore, fetchingMore }: { hasMore: boolean; fetchingMore: boolean }) {
-  if (!hasMore && !fetchingMore) return null;
-  return (
-    <div
-      style={{
-        gridColumn: '1 / -1',
-        padding: 'var(--space-3)',
-        textAlign: 'center',
-        color: 'var(--color-text)',
-        opacity: 0.5,
-        fontSize: 'var(--font-2)',
-      }}
-    >
-      {fetchingMore ? 'loading more…' : ''}
-    </div>
   );
 }
 

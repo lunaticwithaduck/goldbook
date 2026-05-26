@@ -17,10 +17,10 @@ export function App() {
       <Separator />
       {selected ? (
         <Box
+          p={6}
           style={{
             flex: 1,
             minHeight: 0,
-            padding: 'var(--space-5)',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -28,8 +28,8 @@ export function App() {
           <Box
             bg="surface"
             border="border"
-            radius={3}
-            p={5}
+            radius={4}
+            p={6}
             style={{
               flex: 1,
               minHeight: 0,
@@ -66,7 +66,7 @@ function TopBar({
       justify="between"
       gap={4}
       style={{
-        padding: 'var(--space-4) var(--space-5)',
+        padding: 'var(--space-4) var(--space-6)',
         background: 'var(--color-surface)',
       }}
     >

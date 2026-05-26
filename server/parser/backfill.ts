@@ -337,6 +337,13 @@ async function main() {
   );
   if (stopRequested) console.log('(stopped early via SIGINT — re-run to resume)');
 
+  // Truncate-checkpoint so the WAL doesn't stay multi-GB after a heavy run. Skipping
+  // this was what made dashboard reads take minutes after the initial backfill.
+  console.log('checkpointing WAL…');
+  const start = Date.now();
+  sqlite.pragma('wal_checkpoint(TRUNCATE)');
+  console.log(`checkpoint done in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+
   sqlite.close();
 }
 

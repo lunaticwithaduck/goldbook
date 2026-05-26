@@ -10,9 +10,26 @@ const app = new Hono();
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 
+// 30s in-memory cache so /api/stats doesn't run count(*) FROM scans on every
+// dashboard load. The scans table has 30M+ rows; even at SQLite's ~250ms it's
+// the slowest call on the dashboard. Stats are only really used for the topbar
+// counter, so staleness up to 30s is fine.
+let statsCache: { at: number; payload: unknown } | null = null;
+const STATS_TTL_MS = 30_000;
+
 app.get('/api/stats', (c) => {
+  if (statsCache && Date.now() - statsCache.at < STATS_TTL_MS) {
+    return c.json(statsCache.payload);
+  }
   const itemCount = db.select({ n: sql<number>`count(*)` }).from(items).get()?.n ?? 0;
-  const scanCount = db.select({ n: sql<number>`count(*)` }).from(scans).get()?.n ?? 0;
+  // sqlite_stat1 is populated by ANALYZE and gives us the row count without scanning
+  // the table. Falls back to count(*) if stats are missing (fresh DB).
+  const scanCount =
+    (db
+      .all<{ stat: string | null }>(sql`SELECT stat FROM sqlite_stat1 WHERE tbl = 'scans' LIMIT 1`)
+      .map((r) => Number((r.stat ?? '').split(/\s+/)[0]))
+      .find((n) => Number.isFinite(n) && n > 0) as number | undefined) ??
+    (db.select({ n: sql<number>`count(*)` }).from(scans).get()?.n ?? 0);
   const metaCount = db.select({ n: sql<number>`count(*)` }).from(itemMeta).get()?.n ?? 0;
   const lastIngest = db
     .select()
@@ -20,7 +37,9 @@ app.get('/api/stats', (c) => {
     .orderBy(desc(ingests.ingestedAt))
     .limit(1)
     .get();
-  return c.json({ itemCount, scanCount, metaCount, lastIngest: lastIngest ?? null });
+  const payload = { itemCount, scanCount, metaCount, lastIngest: lastIngest ?? null };
+  statsCache = { at: Date.now(), payload };
+  return c.json(payload);
 });
 
 /** /api/taxonomy → categories with counts (drives the sidebar) */

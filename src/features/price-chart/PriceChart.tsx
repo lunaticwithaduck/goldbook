@@ -122,8 +122,8 @@ export function PriceChart({ itemId, itemName }: Props) {
   }, [range, allCandles, allVolume]);
 
   return (
-    <Stack gap={3} style={{ height: '100%', minHeight: 0 }}>
-      <Stack direction="row" justify="between" align="center" gap={3} wrap>
+    <Stack gap={5} style={{ height: '100%', minHeight: 0 }}>
+      <Stack direction="row" justify="between" align="start" gap={5} wrap>
         <Stack gap={1}>
           <Text size={5} weight="medium">
             {itemName}
@@ -263,13 +263,14 @@ function KpiStrip({ kpis }: { kpis: Kpis }) {
       bg="bg"
       border="border"
       radius={3}
+      py={4}
+      px={5}
       style={{
-        padding: 'var(--space-3) var(--space-4)',
         background:
           'linear-gradient(135deg, var(--color-bg) 0%, color-mix(in srgb, var(--color-surface) 60%, var(--color-bg)) 100%)',
       }}
     >
-      <Stack direction="row" gap={5} wrap>
+      <Stack direction="row" gap={6} wrap>
         <Kpi label="Current" value={formatGoldShort(kpis.current)} />
         <Divider />
         <Kpi label="24h" change={kpis.change24h} />
@@ -409,7 +410,10 @@ function ChartCanvas({
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: color.surface },
+        // Chart bg is the page bg (darker than the card) so the card's 32px inner
+        // padding actually *shows* — when they were both color.surface the chart
+        // melted into the card and made it look like there was no padding at all.
+        background: { type: ColorType.Solid, color: color.bg },
         textColor: color.text,
         fontSize: 11,
         fontFamily:
@@ -425,12 +429,14 @@ function ChartCanvas({
         timeVisible: true,
         secondsVisible: false,
       },
-      crosshair: { mode: 1 },
+      // mode: 0 = free crosshair (follows the mouse). 1 = Magnet (snaps to the
+      // nearest data point), which felt like the chart was "stealing" the mouse.
+      crosshair: { mode: 0 },
       autoSize: true,
     });
-    // v5 requires the volume pane to exist before addSeries(..., paneIndex=1) — the
-    // call is silently a no-op (series falls back to pane 0) if the pane is missing.
-    chart.addPane();
+    // Pane creation is deferred to the volume-series effect. addPane() defaults to
+    // preserveEmptyPane=false, so creating it here without immediately attaching a
+    // series gets it auto-removed before the volume effect can target paneIndex=1.
 
     chartRef.current = chart;
     return () => {
@@ -523,14 +529,15 @@ function ChartCanvas({
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    if (volumeSeriesRef.current) {
-      chart.removeSeries(volumeSeriesRef.current);
-      volumeSeriesRef.current = null;
-    }
-    // Re-create pane 1 if it was lost (v5 collapses panes whose last series is
-    // removed). Without this, switching bucket/range can leave us with only the
-    // price pane until the chart is reloaded.
-    if (chart.panes().length < 2) chart.addPane();
+
+    // Stash the previous series; remove it only AFTER the new one is in place. If
+    // we removed it first, pane 1 would briefly have zero series and v5 would
+    // garbage-collect it — then addSeries(..., 1) silently falls back to pane 0.
+    const prevSeries = volumeSeriesRef.current;
+    volumeSeriesRef.current = null;
+
+    // Create pane 1 if it's still missing (e.g. first run, or HMR).
+    while (chart.panes().length < 2) chart.addPane(true);
 
     const points = volume.filter((c) => c.bucket > 0 && c.close > 0);
     // Even with no data we keep an empty series alive in pane 1 so the pane doesn't
@@ -636,12 +643,26 @@ function ChartCanvas({
       s.setData(data);
     }
 
-    // Always pin the volume pane height; v5 will shrink it to zero otherwise on
-    // bucket/series swaps where the series is briefly absent.
+    // Use stretch factors so the price/volume split stays proportional. setHeight(N)
+    // was making the price pane collapse when the chart resized — setStretchFactor
+    // gives us a stable 4:1 split regardless of total height.
     const panes = chart.panes();
-    if (panes.length > 1) panes[1].setHeight(110);
+    if (panes.length > 1) {
+      panes[0].setStretchFactor(4);
+      panes[1].setStretchFactor(1);
+    }
 
     volumeSeriesRef.current = s;
+
+    // Now it's safe to drop the old series — pane 1 still has the new one, so it
+    // won't collapse.
+    if (prevSeries) {
+      try {
+        chart.removeSeries(prevSeries);
+      } catch {
+        // Series already gone (e.g. chart was disposed mid-effect).
+      }
+    }
   }, [volume, candles, volumeMode]);
 
   // Range selector → visible window; Y auto-fits to that window in each pane.

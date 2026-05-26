@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Input, Stack, Text } from '../../design-system/index.js';
 import { api, type ItemRow } from '../../lib/api.js';
 import { CategorySidebar } from './CategorySidebar.js';
@@ -53,6 +53,29 @@ export function Dashboard({ onSelectItem }: Props) {
   );
   const total = data?.pages[0]?.total ?? 0;
 
+  useEffect(() => {
+    console.log('[goldbook] items count changed:', items.length, 'of', total);
+  }, [items.length, total]);
+
+  // Ref-stabilize the load-more callback so virtuoso always invokes the latest
+  // logic with fresh hasNextPage/isFetchingNextPage, even if it cached the prop
+  // on first render.
+  const loadMoreRef = useRef<() => void>(() => {});
+  loadMoreRef.current = () => {
+    console.log(
+      '[goldbook] onEndReached invoked: hasNextPage=',
+      hasNextPage,
+      'isFetchingNextPage=',
+      isFetchingNextPage,
+      'pages=',
+      data?.pages.length,
+    );
+    if (hasNextPage && !isFetchingNextPage) {
+      console.log('[goldbook] -> calling fetchNextPage');
+      fetchNextPage();
+    }
+  };
+
   return (
     <Box
       style={{
@@ -61,7 +84,7 @@ export function Dashboard({ onSelectItem }: Props) {
         flex: 1,
         minHeight: 0,
         gap: 'var(--space-4)',
-        padding: 'var(--space-5)',
+        padding: 'var(--space-6)',
       }}
     >
       <Box
@@ -102,9 +125,7 @@ export function Dashboard({ onSelectItem }: Props) {
             loading={isLoading}
             fetchingMore={isFetchingNextPage}
             hasMore={!!hasNextPage}
-            onEndReached={() => {
-              if (hasNextPage && !isFetchingNextPage) fetchNextPage();
-            }}
+            onEndReached={() => loadMoreRef.current()}
           />
         </Box>
       </Stack>
