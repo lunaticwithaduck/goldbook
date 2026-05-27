@@ -1,9 +1,10 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Input, Stack, Text } from '../../design-system/index.js';
 import { api, type ItemRow } from '../../lib/api.js';
 import { CategorySidebar } from './CategorySidebar.js';
 import { ItemGrid } from './ItemGrid.js';
+import { buildEdgeMap } from './edgeMap.js';
 
 type Props = {
   onSelectItem: (item: ItemRow) => void;
@@ -52,6 +53,15 @@ export function Dashboard({ onSelectItem }: Props) {
     [data],
   );
   const total = data?.pages[0]?.total ?? 0;
+
+  // Background-fetch per-item edge data so tiles can flag flips at a glance.
+  // 5 min staleTime matches the server cache TTL — refetching sooner is pointless.
+  const { data: edgesData } = useQuery({
+    queryKey: ['itemEdges'],
+    queryFn: () => api.edges(),
+    staleTime: 5 * 60_000,
+  });
+  const edgeMap = useMemo(() => buildEdgeMap(edgesData?.edges), [edgesData]);
 
   useEffect(() => {
     console.log('[goldbook] items count changed:', items.length, 'of', total);
@@ -121,6 +131,7 @@ export function Dashboard({ onSelectItem }: Props) {
           <ItemGrid
             items={items}
             total={total}
+            edges={edgeMap}
             onSelect={onSelectItem}
             loading={isLoading}
             fetchingMore={isFetchingNextPage}

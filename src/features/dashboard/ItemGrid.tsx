@@ -3,10 +3,12 @@ import { Icon, Stack, Text } from '../../design-system/index.js';
 import type { ItemRow } from '../../lib/api.js';
 import { formatGoldShort } from '../../lib/currency.js';
 import { qualityColor } from '../../lib/wow.js';
+import type { EdgeMap } from './edgeMap.js';
 import './item-grid.css';
 
 type Props = {
   items: ItemRow[];
+  edges?: EdgeMap;
   onSelect: (item: ItemRow) => void;
   onEndReached?: () => void;
   loading?: boolean;
@@ -17,6 +19,7 @@ type Props = {
 
 export function ItemGrid({
   items,
+  edges,
   onSelect,
   onEndReached,
   loading,
@@ -68,15 +71,37 @@ export function ItemGrid({
               onEndReached?.();
             }
           }}
-          itemContent={(_, item) => <Tile item={item} onClick={() => onSelect(item)} />}
+          itemContent={(_, item) => (
+            <Tile item={item} edge={edges?.get(item.id)} onClick={() => onSelect(item)} />
+          )}
         />
       </div>
     </Stack>
   );
 }
 
-function Tile({ item, onClick }: { item: ItemRow; onClick: () => void }) {
+type Edge = { edgePct: number; medianCopper: number };
+
+function edgeBadge(edge: Edge | undefined): { label: string; color: string } | null {
+  if (!edge) return null;
+  const e = edge.edgePct;
+  if (e >= 100) return { label: `+${e.toFixed(0)}%`, color: 'var(--color-up)' };
+  if (e >= 25) return { label: `+${e.toFixed(0)}%`, color: 'var(--color-up)' };
+  if (e <= -10) return { label: `${e.toFixed(0)}%`, color: 'var(--color-down)' };
+  return null;
+}
+
+function Tile({
+  item,
+  edge,
+  onClick,
+}: {
+  item: ItemRow;
+  edge?: Edge;
+  onClick: () => void;
+}) {
   const nameColor = qualityColor(item.quality);
+  const badge = edgeBadge(edge);
   return (
     <button
       type="button"
@@ -123,9 +148,32 @@ function Tile({ item, onClick }: { item: ItemRow; onClick: () => void }) {
           <Text size={1} muted>
             {item.category ?? '—'}
           </Text>
-          <Text size={2} mono>
-            {formatGoldShort(item.latestPrice)}
-          </Text>
+          <Stack direction="row" gap={2} align="baseline">
+            {badge ? (
+              <span
+                title={
+                  edge
+                    ? `vs clearing median ${formatGoldShort(edge.medianCopper)}`
+                    : undefined
+                }
+                style={{
+                  fontSize: 'var(--font-1)',
+                  fontFamily: 'var(--font-family-mono)',
+                  fontWeight: 600,
+                  color: badge.color,
+                  padding: '1px 6px',
+                  borderRadius: 'var(--radius-1)',
+                  border: `1px solid ${badge.color}`,
+                  opacity: 0.85,
+                }}
+              >
+                {badge.label}
+              </span>
+            ) : null}
+            <Text size={2} mono>
+              {formatGoldShort(item.latestPrice)}
+            </Text>
+          </Stack>
         </Stack>
       </Stack>
     </button>

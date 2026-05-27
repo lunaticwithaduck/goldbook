@@ -96,6 +96,20 @@ export const api = {
       `/api/items/${id}/candles${buildQs({ bucket, sources })}`,
     ),
   flips: (q: FlipsQuery = {}) => get<FlipsResult>(`/api/flips${buildQs(q)}`),
+  edges: (realm?: string) => get<EdgesResult>(`/api/items/edges${buildQs({ realm })}`),
+};
+
+export type ItemEdge = {
+  itemId: number;
+  floorCopper: number;
+  medianCopper: number;
+  avgQtyPerDay: number;
+  edgePct: number;
+};
+
+export type EdgesResult = {
+  realm: string;
+  edges: ItemEdge[];
 };
 
 export type Bucket = 'hour' | 'day' | 'week' | 'month';

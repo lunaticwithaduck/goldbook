@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { and, asc, desc, eq, inArray, like, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { findFlips, GOLD, pickRealm } from './analysis/flipFinder.js';
+import { findFlips, getAllItemEdges, GOLD, pickRealm } from './analysis/flipFinder.js';
 import { openDb } from './db/client.js';
 import { ingests, itemMeta, items, scans } from './db/schema.js';
 
@@ -258,6 +258,28 @@ app.get('/api/flips', (c) => {
   const result = findFlips(db, sqlite, opts);
   flipsCache.set(key, { at: Date.now(), payload: result });
   return c.json(result);
+});
+
+// /api/items/edges → one record per item with both a current AH floor and a recent
+// clearing median. Cached for 5 minutes; first request after a restart is ~10s.
+const edgesCache = new Map<string, { at: number; payload: unknown }>();
+const EDGES_TTL_MS = 5 * 60_000;
+
+app.get('/api/items/edges', (c) => {
+  let realm: string;
+  try {
+    realm = pickRealm(sqlite, c.req.query('realm'));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+  const hit = edgesCache.get(realm);
+  if (hit && Date.now() - hit.at < EDGES_TTL_MS) {
+    return c.json(hit.payload);
+  }
+  const edges = getAllItemEdges(db, sqlite, realm);
+  const payload = { realm, edges };
+  edgesCache.set(realm, { at: Date.now(), payload });
+  return c.json(payload);
 });
 
 const port = Number(process.env.PORT ?? 3001);

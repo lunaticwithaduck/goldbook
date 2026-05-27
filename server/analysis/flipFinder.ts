@@ -191,6 +191,40 @@ export function scorePicks(cands: Candidate[], opts: FlipOpts): FlipPick[] {
   return picks;
 }
 
+export type ItemEdge = {
+  itemId: number;
+  floorCopper: number;
+  medianCopper: number;
+  avgQtyPerDay: number;
+  edgePct: number;
+};
+
+/**
+ * One edge record per item that has both a current AH floor (latest dump) and a recent
+ * nerfed clearing median. Used by the dashboard tiles to flag opportunities without
+ * making the user open the Flips page first.
+ */
+export function getAllItemEdges(db: DB, sqlite: SqliteDatabase, realm: string): ItemEdge[] {
+  const cands = findCandidates(db, sqlite, {
+    realm,
+    bankrollCopper: 0,
+    topCandidates: 5000,
+    positions: 0,
+    minVolume: 0,
+    minEdgePct: -10_000,
+    maxFloorCopper: Number.MAX_SAFE_INTEGER,
+    minFloorCopper: 0,
+    excludeProjectiles: false,
+  });
+  return cands.map((c) => ({
+    itemId: c.itemId,
+    floorCopper: c.floorCopper,
+    medianCopper: c.medianCopper,
+    avgQtyPerDay: c.avgQtyPerDay,
+    edgePct: ((c.medianCopper - c.floorCopper) / c.floorCopper) * 100,
+  }));
+}
+
 export function findFlips(db: DB, sqlite: SqliteDatabase, opts: FlipOpts): FlipResult {
   const cands = findCandidates(db, sqlite, opts);
   const picks = scorePicks(cands, opts);
